@@ -81,7 +81,7 @@ cudaError_t RGBA2NV12(cudaArray *srcImage,
 
 	RGBA2NV12_kernel<<<grid, block>>>(dstImage, destPitch, width, height);
 
-	cudaThreadSynchronize();
+	cudaDeviceSynchronize();
 
 	cudaStatus = cudaGetLastError();
 	return cudaStatus;

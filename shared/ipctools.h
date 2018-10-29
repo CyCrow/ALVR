@@ -6,6 +6,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <WinSock2.h>
 #include <windows.h>
 
 // A named mutex for synchronization between processes.

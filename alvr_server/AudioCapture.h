@@ -1,5 +1,6 @@
 #pragma once
 #include <stdio.h>
+#include <winsock2.h>
 #include <windows.h>
 #include <mmsystem.h>
 #include <mmdeviceapi.h>

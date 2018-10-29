@@ -4,13 +4,14 @@
 //
 //==================================================================================================
 
+#include <winsock2.h>
+
 #include "openvr_driver.h"
 #include "sharedstate.h"
 #include "threadtools.h"
 #include "systemtime.h"
 #include "d3drender.h"
 
-#include <winsock2.h>
 #include <d3d11.h>
 #include <wrl.h>
 #include <map>
@@ -1234,6 +1235,7 @@ public:
 			char buf[1000];
 			snprintf(buf, sizeof(buf)
 				, "%s"
+				"%s %d\n"
 				"%s %d\n"
 				"%s %d\n"
 				"%s %d\n"

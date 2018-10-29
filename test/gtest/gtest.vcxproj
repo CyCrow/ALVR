@@ -57,8 +57,8 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_WINDLL;NOMINMAX;_WINSOCKAPI_;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
+      <PreprocessorDefinitions>_SILENCE_TR1_NAMESPACE_DEPRECATION_WARNING;_WINDLL;NOMINMAX;_WINSOCKAPI_;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>false</ConformanceMode>
       <AdditionalIncludeDirectories>$(ProjectDir)include;$(SolutionDir)openvr\headers;$(SolutionDir)alvr_server;$(SolutionDir)ALVR-common;$(SolutionDir)shared;$(CUDA_PATH)/include;$(SolutionDir)alvr_server\include;$(SolutionDir)CUDA;$(SolutionDir)libswresample\include</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
     </ClCompile>
@@ -76,8 +76,8 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_WINDLL;NOMINMAX;_WINSOCKAPI_;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
+      <PreprocessorDefinitions>_SILENCE_TR1_NAMESPACE_DEPRECATION_WARNING;_WINDLL;NOMINMAX;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>false</ConformanceMode>
       <AdditionalIncludeDirectories>$(ProjectDir)include;$(SolutionDir)openvr\headers;$(SolutionDir)alvr_server;$(SolutionDir)ALVR-common;$(SolutionDir)shared;$(CUDA_PATH)/include;$(SolutionDir)alvr_server\include;$(SolutionDir)CUDA;$(SolutionDir)libswresample\include</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
     </ClCompile>
@@ -132,21 +132,23 @@
     <ClInclude Include="test-common.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="packages.config" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\..\shared\shared.vcxproj">
       <Project>{10868996-d864-4e88-8bcb-ba530af64712}</Project>
     </ProjectReference>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
-    <Import Project="..\..\packages\directxtk_desktop_2015.2018.6.1.2\build\native\directxtk_desktop_2015.targets" Condition="Exists('..\..\packages\directxtk_desktop_2015.2018.6.1.2\build\native\directxtk_desktop_2015.targets')" />
+    <Import Project="..\..\packages\directxtk_desktop_2015.2018.8.18.2\build\native\directxtk_desktop_2015.targets" Condition="Exists('..\..\packages\directxtk_desktop_2015.2018.8.18.2\build\native\directxtk_desktop_2015.targets')" />
+    <Import Project="..\..\packages\gmock.1.7.0\build\native\gmock.targets" Condition="Exists('..\..\packages\gmock.1.7.0\build\native\gmock.targets')" />
   </ImportGroup>
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
     <PropertyGroup>
       <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
     </PropertyGroup>
-    <Error Condition="!Exists('..\..\packages\directxtk_desktop_2015.2018.6.1.2\build\native\directxtk_desktop_2015.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\packages\directxtk_desktop_2015.2018.6.1.2\build\native\directxtk_desktop_2015.targets'))" />
+    <Error Condition="!Exists('..\..\packages\directxtk_desktop_2015.2018.8.18.2\build\native\directxtk_desktop_2015.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\packages\directxtk_desktop_2015.2018.8.18.2\build\native\directxtk_desktop_2015.targets'))" />
+    <Error Condition="!Exists('..\..\packages\gmock.1.7.0\build\native\gmock.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\packages\gmock.1.7.0\build\native\gmock.targets'))" />
   </Target>
 </Project>
