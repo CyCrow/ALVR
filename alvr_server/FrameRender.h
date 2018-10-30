@@ -25,6 +25,9 @@ public:
 	FrameRender(std::shared_ptr<CD3DRender> pD3DRender);
 	virtual ~FrameRender();
 
+	
+
+
 	bool Startup();
 	bool RenderFrame(ID3D11Texture2D *pTexture[][2], vr::VRTextureBounds_t bounds[][2], int layerCount, bool recentering, const std::string& message, const std::string& debugText);
 	void RenderMessage(const std::string& message);
@@ -38,6 +41,8 @@ private:
 
 	ComPtr<ID3D11VertexShader> m_pVertexShader;
 	ComPtr<ID3D11PixelShader> m_pPixelShader;
+
+	ComPtr<ID3D11Buffer> m_pConstantBuffer;
 
 	ComPtr<ID3D11InputLayout> m_pVertexLayout;
 	ComPtr<ID3D11Buffer> m_pVertexBuffer;
@@ -67,7 +72,19 @@ private:
 		DirectX::XMFLOAT2 Tex;
 		uint32_t View;
 	};
+
+	float m_Gamma;
+	int m_GridSize;
+
+	SimpleVertex *m_VertexBufferArray;
+	int m_VertexCount;
+	WORD *m_IndexBufferArray;
+	int m_IndexCount;
+
+	void InitWarpGeometry(SimpleVertex *vtx, WORD *idx, float gamma, int w, int h);
+
+	
 	// Parameter for Draw method. 2-triangles for both eyes.
-	static const int VERTEX_INDEX_COUNT = 12;
+	// static const int VERTEX_INDEX_COUNT = 12;
 };
 

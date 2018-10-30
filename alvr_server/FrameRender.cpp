@@ -18,6 +18,73 @@ FrameRender::~FrameRender()
 {
 }
 
+// Create distortion geometry with w x h grid.
+// coordinates are 0.0 to 1.0
+void FrameRender::InitWarpGeometry(SimpleVertex *vtx, WORD * idx, float gamma, int w , int h)
+{
+	float dx = (1.0f) / (w - 1);
+	float dy = (1.0f) / (h - 1);
+
+	// create vertices
+	for (int y = 0; y < h; ++y)
+	{
+		float fy = y * dy;
+		float gy = 0.5f * powf(1.0f - 2.0f * fabs(fy - 0.5f), gamma);
+		if (fy >= 0.5f)
+			gy = 1.0f - gy;
+		
+		for (int x = 0; x < w; ++x)
+		{
+			int pos = y * w + x;
+			float fx = x * dx; // 0-1
+			float gx = 0.5f * powf(1.0f - 2.0f * fabs(fx - 0.5f), gamma);
+			if (fx >= 0.5f)
+				gx = 1.0f - gx;
+
+			vtx[pos].Pos = DirectX::XMFLOAT3(gx, gy, 0.5f);
+			vtx[pos].Tex = DirectX::XMFLOAT2(fx, fy);
+			vtx[pos].View = 0;
+
+			vtx[pos + w * h] = vtx[pos];
+			vtx[pos + w * h].View = 1; // right eye
+		}
+	}
+
+	// init triangle index buffer 
+	int idxPos = 0;
+	for (int y = 0; y < (h-1); ++y)
+	{
+		for (int x = 0; x < (w-1); ++x)
+		{
+			int pos = x * w + y;
+			
+			idx[idxPos++] = pos;
+			idx[idxPos++] = pos + 1;
+			idx[idxPos++] = pos + w;
+			idx[idxPos++] = pos + 1;
+			idx[idxPos++] = pos + w + 1;
+			idx[idxPos++] = pos + w;
+		}
+	}
+
+	for (int i = 0; i < w*h*6; ++i)
+	{
+		idx[idxPos + i] = idx[i] + w * h; // right eye
+	}
+}
+
+
+struct VS_BOUNDS_PARAMS
+{
+	float originX, originY, scaleX, scaleY;
+	float uMin0, vMin0, uMax0, vMax0;
+	float uMin1, vMin1, uMax1, vMax1; 
+};
+
+static_assert(!(sizeof(VS_BOUNDS_PARAMS) % 16), "VS_BOUNDS_PARAMETERS needs to be 16 bytes aligned");
+
+
+
 bool FrameRender::Startup()
 {
 	if (m_pStagingTexture) {
@@ -125,6 +192,39 @@ bool FrameRender::Startup()
 	}
 
 	//
+	// Create constant buffer
+	//
+
+	VS_BOUNDS_PARAMS VsConstData = 
+	{ 
+		-1,-1,2,2,
+		0,0,1,1, 
+		0,0,1,1 
+	};
+	
+	D3D11_BUFFER_DESC cbDesc;
+	cbDesc.ByteWidth = sizeof( VS_BOUNDS_PARAMS );
+	cbDesc.Usage = D3D11_USAGE_DYNAMIC;
+	cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	cbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	cbDesc.MiscFlags = 0;
+	cbDesc.StructureByteStride = 0;
+
+	// Fill in the subresource data.
+	D3D11_SUBRESOURCE_DATA InitData;
+	InitData.pSysMem = &VsConstData;
+	InitData.SysMemPitch = 0;
+	InitData.SysMemSlicePitch = 0;
+
+	// Create the buffer.
+	hr = m_pD3DRender->GetDevice()->CreateBuffer( &cbDesc, &InitData, &m_pConstantBuffer);
+	if (FAILED(hr)) {
+		Log("CreateBuffer %p %s", hr, GetDxErrorStr(hr).c_str());
+		return false;
+	}
+
+
+	//
 	// Create input layout
 	//
 
@@ -132,11 +232,10 @@ bool FrameRender::Startup()
 	D3D11_INPUT_ELEMENT_DESC layout[] =
 	{
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-	{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-	{ "VIEW", 0, DXGI_FORMAT_R32_UINT, 0, 20, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+		{ "VIEW", 0, DXGI_FORMAT_R32_UINT, 0, 20, D3D11_INPUT_PER_VERTEX_DATA, 0 },
 	};
 	UINT numElements = ARRAYSIZE(layout);
-
 
 	// Create the input layout
 	hr = m_pD3DRender->GetDevice()->CreateInputLayout(layout, numElements, &vshader[0],
@@ -153,61 +252,131 @@ bool FrameRender::Startup()
 	// Create vertex buffer
 	//
 
-	// Src texture has various geometry and we should use the part of the textures.
-	// That part are defined by uv-coordinates of "bounds" passed to IVRDriverDirectModeComponent::SubmitLayer.
-	// So we should update uv-coordinates for every frames and layers.
-	D3D11_BUFFER_DESC bd;
-	ZeroMemory(&bd, sizeof(bd));
-	bd.Usage = D3D11_USAGE_DYNAMIC;
-	bd.ByteWidth = sizeof(SimpleVertex) * 8;
-	bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-
-	hr = m_pD3DRender->GetDevice()->CreateBuffer(&bd, NULL, &m_pVertexBuffer);
-	if (FAILED(hr)) {
-		Log("CreateBuffer 1 %p %s", hr, GetDxErrorStr(hr).c_str());
-		return false;
-	}
-
-	// Set vertex buffer
-	UINT stride = sizeof(SimpleVertex);
-	UINT offset = 0;
-	m_pD3DRender->GetContext()->IASetVertexBuffers(0, 1, m_pVertexBuffer.GetAddressOf(), &stride, &offset);
-	
-	//
-	// Create index buffer
-	//
-
-	WORD indices[] =
+	if (true)
 	{
-		0,1,2,
-		0,3,1,
+		// Src texture has various geometry and we should use the part of the textures.
+		// That part are defined by uv-coordinates of "bounds" passed to IVRDriverDirectModeComponent::SubmitLayer.
+		// So we should update uv-coordinates for every frames and layers.
+		D3D11_BUFFER_DESC bd;
+		ZeroMemory(&bd, sizeof(bd));
+		bd.Usage = D3D11_USAGE_DYNAMIC;
 
-		4,5,6,
-		4,7,5
-	};
+		m_GridSize = 64;
+		m_Gamma = 1.0f;
 
-	bd.Usage = D3D11_USAGE_DEFAULT;
-	bd.ByteWidth = sizeof(indices);
-	bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
-	bd.CPUAccessFlags = 0;
+		m_IndexCount = (m_GridSize - 1) * (m_GridSize - 1) * 6 * 2;
+		m_VertexCount = m_GridSize * m_GridSize * 2;
 
-	D3D11_SUBRESOURCE_DATA InitData;
-	ZeroMemory(&InitData, sizeof(InitData));
-	InitData.pSysMem = indices;
+		m_IndexBufferArray = new WORD[m_IndexCount];
+		m_VertexBufferArray = new SimpleVertex[m_VertexCount];
+		
+		InitWarpGeometry(m_VertexBufferArray, m_IndexBufferArray, m_Gamma, m_GridSize, m_GridSize);
 
-	hr = m_pD3DRender->GetDevice()->CreateBuffer(&bd, &InitData, &m_pIndexBuffer);
-	if (FAILED(hr)) {
-		Log("CreateBuffer 2 %p %s", hr, GetDxErrorStr(hr).c_str());
-		return false;
+		//
+		// Create Vertex buffer
+		// 
+		bd.ByteWidth = sizeof(SimpleVertex) * m_VertexCount;
+		bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+		bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+		hr = m_pD3DRender->GetDevice()->CreateBuffer(&bd, NULL, &m_pVertexBuffer);
+		if (FAILED(hr)) {
+			Log("CreateBuffer 1 %p %s", hr, GetDxErrorStr(hr).c_str());
+			return false;
+		}
+
+		// Set vertex buffer
+		UINT stride = sizeof(SimpleVertex);
+		UINT offset = 0;
+		m_pD3DRender->GetContext()->IASetVertexBuffers(0, 1, m_pVertexBuffer.GetAddressOf(), &stride, &offset);
+
+		//
+		// Create index buffer
+		//
+		bd.Usage = D3D11_USAGE_DEFAULT;
+		bd.ByteWidth = sizeof(WORD) * m_IndexCount;
+		bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
+		bd.CPUAccessFlags = 0;
+
+		D3D11_SUBRESOURCE_DATA InitData;
+		ZeroMemory(&InitData, sizeof(InitData));
+		InitData.pSysMem = m_IndexBufferArray;
+
+		hr = m_pD3DRender->GetDevice()->CreateBuffer(&bd, &InitData, &m_pIndexBuffer);
+		if (FAILED(hr)) {
+			Log("CreateBuffer 2 %p %s", hr, GetDxErrorStr(hr).c_str());
+			return false;
+		}
+
+		// Set index buffer
+		m_pD3DRender->GetContext()->IASetIndexBuffer(m_pIndexBuffer.Get(), DXGI_FORMAT_R16_UINT, 0);
+
+		// Set primitive topology
+		m_pD3DRender->GetContext()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+
 	}
+	else
+	{
+		// Src texture has various geometry and we should use the part of the textures.
+		// That part are defined by uv-coordinates of "bounds" passed to IVRDriverDirectModeComponent::SubmitLayer.
+		// So we should update uv-coordinates for every frames and layers.
+		D3D11_BUFFER_DESC bd;
+		ZeroMemory(&bd, sizeof(bd));
+		bd.Usage = D3D11_USAGE_DYNAMIC;
+		bd.ByteWidth = sizeof(SimpleVertex) * 8;
+		bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+		bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 
-	// Set index buffer
-	m_pD3DRender->GetContext()->IASetIndexBuffer(m_pIndexBuffer.Get(), DXGI_FORMAT_R16_UINT, 0);
+		hr = m_pD3DRender->GetDevice()->CreateBuffer(&bd, NULL, &m_pVertexBuffer);
+		if (FAILED(hr)) {
+			Log("CreateBuffer 1 %p %s", hr, GetDxErrorStr(hr).c_str());
+			return false;
+		}
 
-	// Set primitive topology
-	m_pD3DRender->GetContext()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		// Set vertex buffer
+		UINT stride = sizeof(SimpleVertex);
+		UINT offset = 0;
+		m_pD3DRender->GetContext()->IASetVertexBuffers(0, 1, m_pVertexBuffer.GetAddressOf(), &stride, &offset);
 
+		//
+		// Create index buffer
+		//
+
+		WORD indices[] =
+		{
+			0,1,2,
+			0,3,1,
+
+			4,5,6,
+			4,7,5
+		};
+
+		m_IndexCount = 12;
+
+		bd.Usage = D3D11_USAGE_DEFAULT;
+		bd.ByteWidth = sizeof(indices);
+		bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
+		bd.CPUAccessFlags = 0;
+
+		D3D11_SUBRESOURCE_DATA InitData;
+		ZeroMemory(&InitData, sizeof(InitData));
+		InitData.pSysMem = indices;
+
+		hr = m_pD3DRender->GetDevice()->CreateBuffer(&bd, &InitData, &m_pIndexBuffer);
+		if (FAILED(hr)) {
+			Log("CreateBuffer 2 %p %s", hr, GetDxErrorStr(hr).c_str());
+			return false;
+		}
+
+		// Set index buffer
+		m_pD3DRender->GetContext()->IASetIndexBuffer(m_pIndexBuffer.Get(), DXGI_FORMAT_R16_UINT, 0);
+
+		// Set primitive topology
+		m_pD3DRender->GetContext()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	}
+	
 	// Create the sample state
 	D3D11_SAMPLER_DESC sampDesc;
 	ZeroMemory(&sampDesc, sizeof(sampDesc));
@@ -292,7 +461,6 @@ bool FrameRender::Startup()
 
 	return true;
 }
-
 
 bool FrameRender::RenderFrame(ID3D11Texture2D *pTexture[][2], vr::VRTextureBounds_t bounds[][2], int layerCount, bool recentering, const std::string &message, const std::string& debugText)
 {
@@ -381,22 +549,32 @@ bool FrameRender::RenderFrame(ID3D11Texture2D *pTexture[][2], vr::VRTextureBound
 		// Update uv-coordinates in vertex buffer according to bounds.
 		//
 
+		VS_BOUNDS_PARAMS *pBounds = NULL;
+
+
+		// Set the buffer.
+		m_pD3DRender->GetContext()->VSSetConstantBuffers( 0, 1, &m_pConstantBuffer );
+
+
+		
+		/*
 		SimpleVertex vertices[] =
 		{
 			// Left View
 			{ DirectX::XMFLOAT3(-1.0f, -1.0f, 0.5f), DirectX::XMFLOAT2(bound[0].uMin, bound[0].vMax), 0 },
-		{ DirectX::XMFLOAT3(0.0f,  1.0f, 0.5f), DirectX::XMFLOAT2(bound[0].uMax, bound[0].vMin), 0 },
-		{ DirectX::XMFLOAT3(0.0f, -1.0f, 0.5f), DirectX::XMFLOAT2(bound[0].uMax, bound[0].vMax), 0 },
-		{ DirectX::XMFLOAT3(-1.0f,  1.0f, 0.5f), DirectX::XMFLOAT2(bound[0].uMin, bound[0].vMin), 0 },
-		// Right View
-		{ DirectX::XMFLOAT3(0.0f, -1.0f, 0.5f), DirectX::XMFLOAT2(bound[1].uMin, bound[1].vMax), 1 },
-		{ DirectX::XMFLOAT3(1.0f,  1.0f, 0.5f), DirectX::XMFLOAT2(bound[1].uMax, bound[1].vMin), 1 },
-		{ DirectX::XMFLOAT3(1.0f, -1.0f, 0.5f), DirectX::XMFLOAT2(bound[1].uMax, bound[1].vMax), 1 },
-		{ DirectX::XMFLOAT3(0.0f,  1.0f, 0.5f), DirectX::XMFLOAT2(bound[1].uMin, bound[1].vMin), 1 },
+			{ DirectX::XMFLOAT3( 0.0f,  1.0f, 0.5f), DirectX::XMFLOAT2(bound[0].uMax, bound[0].vMin), 0 },
+			{ DirectX::XMFLOAT3( 0.0f, -1.0f, 0.5f), DirectX::XMFLOAT2(bound[0].uMax, bound[0].vMax), 0 },
+			{ DirectX::XMFLOAT3(-1.0f,  1.0f, 0.5f), DirectX::XMFLOAT2(bound[0].uMin, bound[0].vMin), 0 },
+			// Right View
+			{ DirectX::XMFLOAT3( 0.0f, -1.0f, 0.5f), DirectX::XMFLOAT2(bound[1].uMin, bound[1].vMax), 1 },
+			{ DirectX::XMFLOAT3( 1.0f,  1.0f, 0.5f), DirectX::XMFLOAT2(bound[1].uMax, bound[1].vMin), 1 },
+			{ DirectX::XMFLOAT3( 1.0f, -1.0f, 0.5f), DirectX::XMFLOAT2(bound[1].uMax, bound[1].vMax), 1 },
+			{ DirectX::XMFLOAT3( 0.0f,  1.0f, 0.5f), DirectX::XMFLOAT2(bound[1].uMin, bound[1].vMin), 1 },
 		};
 
 		// TODO: Which is better? UpdateSubresource or Map
 		//m_pD3DRender->GetContext()->UpdateSubresource(m_pVertexBuffer.Get(), 0, nullptr, &vertices, 0, 0);
+		*/
 
 		D3D11_MAPPED_SUBRESOURCE mapped = { 0 };
 		hr = m_pD3DRender->GetContext()->Map(m_pVertexBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
@@ -404,9 +582,10 @@ bool FrameRender::RenderFrame(ID3D11Texture2D *pTexture[][2], vr::VRTextureBound
 			Log("Map %p %s", hr, GetDxErrorStr(hr).c_str());
 			return false;
 		}
-		memcpy(mapped.pData, vertices, sizeof(vertices));
+		memcpy(mapped.pData, m_VertexBufferArray, sizeof(SimpleVertex) * m_VertexCount);
 
 		m_pD3DRender->GetContext()->Unmap(m_pVertexBuffer.Get(), 0);
+		
 
 		// Set the input layout
 		m_pD3DRender->GetContext()->IASetInputLayout(m_pVertexLayout.Get());
@@ -438,7 +617,7 @@ bool FrameRender::RenderFrame(ID3D11Texture2D *pTexture[][2], vr::VRTextureBound
 		// Draw
 		//
 
-		m_pD3DRender->GetContext()->DrawIndexed(VERTEX_INDEX_COUNT, 0, 0);
+		m_pD3DRender->GetContext()->DrawIndexed(m_IndexCount, 0, 0);
 	}
 
 	if (!message.empty()) {

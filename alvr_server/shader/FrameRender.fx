@@ -2,6 +2,13 @@ Texture2D txLeft : register(t0);
 Texture2D txRight : register(t1);
 SamplerState samLinear : register(s0);
 
+cbuffer VS_BOUNDS_PARAMS : register(b0)
+{
+	float2 origin, scale;
+	float uMin0, vMin0, uMax0, vMax0;
+	float uMin1, vMin1, uMax1, vMax1; 
+};
+
 struct VS_INPUT
 {
 	float4 Pos : POSITION;
@@ -18,7 +25,7 @@ struct PS_INPUT
 PS_INPUT VS(VS_INPUT input)
 {
 	PS_INPUT output = (PS_INPUT)0;
-	output.Pos = input.Pos;
+	output.Pos.xy = origin + (input.Pos.xy * scale);
 	output.Tex = input.Tex;
 	output.View = input.View;
 
