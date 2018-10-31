@@ -82,7 +82,7 @@ private:
 	int m_IndexCount;
 
 	void InitWarpGeometry(SimpleVertex *vtx, WORD *idx, float gamma, int w, int h);
-
+	void InitWarpGeometry2(SimpleVertex *vtx, WORD *idx, float gamma, int sz, vr::VRTextureBounds_t *bounds);
 	
 	// Parameter for Draw method. 2-triangles for both eyes.
 	// static const int VERTEX_INDEX_COUNT = 12;

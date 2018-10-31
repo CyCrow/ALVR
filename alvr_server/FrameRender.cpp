@@ -73,6 +73,63 @@ void FrameRender::InitWarpGeometry(SimpleVertex *vtx, WORD * idx, float gamma, i
 	}
 }
 
+void FrameRender::InitWarpGeometry2(SimpleVertex *vtx, WORD * idx, float gamma, int sz, vr::VRTextureBounds_t *bounds)
+{
+	float dx = (1.0f) / (sz - 1);
+	float dy = (1.0f) / (sz - 1);
+
+	int sz2 = sz * sz;
+	int idxSz = (sz - 1) * (sz - 1) * 6;
+
+	// create vertices
+	for (int y = 0; y < sz; ++y)
+	{
+		float fy = y * dy;
+		float gy = 0.5f * powf(1.0f - 2.0f * fabs(fy - 0.5f), gamma);
+		if (fy >= 0.5f)
+			gy = 1.0f - gy;
+
+		for (int x = 0; x < sz; ++x)
+		{
+			int pos = y * sz + x;
+			float fx = x * dx; // 0-1
+			float gx = 0.5f * powf(1.0f - 2.0f * fabs(fx - 0.5f), gamma);
+			if (fx >= 0.5f)
+				gx = 1.0f - gx;
+
+			vtx[pos].Pos = DirectX::XMFLOAT3(-1.0f + gx, -1.0f + 2 * gy, 0.5f);
+			vtx[pos].Tex = DirectX::XMFLOAT2(bounds[0].uMin + (fx * bounds[0].uMax), bounds[0].vMax - (bounds[0].vMin + (fy * bounds[0].vMax)));
+			vtx[pos].View = 0;
+
+			vtx[pos + sz2].Pos = DirectX::XMFLOAT3(0.0f + gx, -1.0f + 2 * gy, 0.5f);
+			vtx[pos + sz2].Tex = DirectX::XMFLOAT2(bounds[1].uMin + (fx * bounds[1].uMax), bounds[1].vMax - (bounds[1].vMin + (fy * bounds[1].vMax)));
+			vtx[pos + sz2].View = 1; // right eye
+		}
+	}
+
+	// init triangle index buffer 
+	int idxPos = 0;
+	for (int y = 0; y < (sz - 1); ++y)
+	{
+		for (int x = 0; x < (sz - 1); ++x)
+		{
+			int pos = x * sz + y;
+
+			idx[idxPos++] = pos;			
+			idx[idxPos++] = pos + sz;
+			idx[idxPos++] = pos + 1;
+
+			idx[idxPos++] = pos + 1;
+			idx[idxPos++] = pos + sz;
+			idx[idxPos++] = pos + sz + 1;
+		}
+	}
+
+	for (int i = 0; i < idxSz; ++i)
+	{
+		idx[idxSz + i] = idx[i] + sz2; // right eye
+	}
+}
 
 struct VS_BOUNDS_PARAMS
 {
@@ -262,7 +319,7 @@ bool FrameRender::Startup()
 		bd.Usage = D3D11_USAGE_DYNAMIC;
 
 		m_GridSize = 64;
-		m_Gamma = 1.0f;
+		m_Gamma = 1.5f;
 
 		m_IndexCount = (m_GridSize - 1) * (m_GridSize - 1) * 6 * 2;
 		m_VertexCount = m_GridSize * m_GridSize * 2;
@@ -270,7 +327,11 @@ bool FrameRender::Startup()
 		m_IndexBufferArray = new WORD[m_IndexCount];
 		m_VertexBufferArray = new SimpleVertex[m_VertexCount];
 		
-		InitWarpGeometry(m_VertexBufferArray, m_IndexBufferArray, m_Gamma, m_GridSize, m_GridSize);
+		vr::VRTextureBounds_t bound[2];
+		bound[0].uMin = bound[0].vMin = bound[1].uMin = bound[1].vMin = 0.0f;
+		bound[0].uMax = bound[0].vMax = bound[1].uMax = bound[1].vMax = 1.0f;
+
+		InitWarpGeometry2(m_VertexBufferArray, m_IndexBufferArray, m_Gamma, m_GridSize, bound);
 
 		//
 		// Create Vertex buffer
@@ -321,10 +382,12 @@ bool FrameRender::Startup()
 		// Src texture has various geometry and we should use the part of the textures.
 		// That part are defined by uv-coordinates of "bounds" passed to IVRDriverDirectModeComponent::SubmitLayer.
 		// So we should update uv-coordinates for every frames and layers.
+		m_VertexCount = 8;
+
 		D3D11_BUFFER_DESC bd;
 		ZeroMemory(&bd, sizeof(bd));
 		bd.Usage = D3D11_USAGE_DYNAMIC;
-		bd.ByteWidth = sizeof(SimpleVertex) * 8;
+		bd.ByteWidth = sizeof(SimpleVertex) * m_VertexCount;
 		bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 		bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 
@@ -353,6 +416,7 @@ bool FrameRender::Startup()
 		};
 
 		m_IndexCount = 12;
+		
 
 		bd.Usage = D3D11_USAGE_DEFAULT;
 		bd.ByteWidth = sizeof(indices);
@@ -557,24 +621,31 @@ bool FrameRender::RenderFrame(ID3D11Texture2D *pTexture[][2], vr::VRTextureBound
 
 
 		
-		/*
-		SimpleVertex vertices[] =
+		if (m_VertexCount == 8)
 		{
-			// Left View
-			{ DirectX::XMFLOAT3(-1.0f, -1.0f, 0.5f), DirectX::XMFLOAT2(bound[0].uMin, bound[0].vMax), 0 },
-			{ DirectX::XMFLOAT3( 0.0f,  1.0f, 0.5f), DirectX::XMFLOAT2(bound[0].uMax, bound[0].vMin), 0 },
-			{ DirectX::XMFLOAT3( 0.0f, -1.0f, 0.5f), DirectX::XMFLOAT2(bound[0].uMax, bound[0].vMax), 0 },
-			{ DirectX::XMFLOAT3(-1.0f,  1.0f, 0.5f), DirectX::XMFLOAT2(bound[0].uMin, bound[0].vMin), 0 },
-			// Right View
-			{ DirectX::XMFLOAT3( 0.0f, -1.0f, 0.5f), DirectX::XMFLOAT2(bound[1].uMin, bound[1].vMax), 1 },
-			{ DirectX::XMFLOAT3( 1.0f,  1.0f, 0.5f), DirectX::XMFLOAT2(bound[1].uMax, bound[1].vMin), 1 },
-			{ DirectX::XMFLOAT3( 1.0f, -1.0f, 0.5f), DirectX::XMFLOAT2(bound[1].uMax, bound[1].vMax), 1 },
-			{ DirectX::XMFLOAT3( 0.0f,  1.0f, 0.5f), DirectX::XMFLOAT2(bound[1].uMin, bound[1].vMin), 1 },
-		};
+			SimpleVertex vertices[] =
+			{
+				// Left View
+				{ DirectX::XMFLOAT3(-1.0f, -1.0f, 0.5f), DirectX::XMFLOAT2(bound[0].uMin, bound[0].vMax), 0 },
+				{ DirectX::XMFLOAT3(0.0f,  1.0f, 0.5f), DirectX::XMFLOAT2(bound[0].uMax, bound[0].vMin), 0 },
+				{ DirectX::XMFLOAT3(0.0f, -1.0f, 0.5f), DirectX::XMFLOAT2(bound[0].uMax, bound[0].vMax), 0 },
+				{ DirectX::XMFLOAT3(-1.0f,  1.0f, 0.5f), DirectX::XMFLOAT2(bound[0].uMin, bound[0].vMin), 0 },
+				// Right View
+				{ DirectX::XMFLOAT3(0.0f, -1.0f, 0.5f), DirectX::XMFLOAT2(bound[1].uMin, bound[1].vMax), 1 },
+				{ DirectX::XMFLOAT3(1.0f,  1.0f, 0.5f), DirectX::XMFLOAT2(bound[1].uMax, bound[1].vMin), 1 },
+				{ DirectX::XMFLOAT3(1.0f, -1.0f, 0.5f), DirectX::XMFLOAT2(bound[1].uMax, bound[1].vMax), 1 },
+				{ DirectX::XMFLOAT3(0.0f,  1.0f, 0.5f), DirectX::XMFLOAT2(bound[1].uMin, bound[1].vMin), 1 },
+			};
 
+			memcpy(m_VertexBufferArray, vertices, sizeof(SimpleVertex) * m_VertexCount);
+		}
+		else
+		{
+			InitWarpGeometry2(m_VertexBufferArray, m_IndexBufferArray, m_Gamma, m_GridSize, bound);
+		}
 		// TODO: Which is better? UpdateSubresource or Map
 		//m_pD3DRender->GetContext()->UpdateSubresource(m_pVertexBuffer.Get(), 0, nullptr, &vertices, 0, 0);
-		*/
+		
 
 		D3D11_MAPPED_SUBRESOURCE mapped = { 0 };
 		hr = m_pD3DRender->GetContext()->Map(m_pVertexBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);

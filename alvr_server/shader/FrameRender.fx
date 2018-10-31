@@ -25,7 +25,7 @@ struct PS_INPUT
 PS_INPUT VS(VS_INPUT input)
 {
 	PS_INPUT output = (PS_INPUT)0;
-	output.Pos.xy = origin + (input.Pos.xy * scale);
+	output.Pos = input.Pos; //origin + (input.Pos.xy * scale);
 	output.Tex = input.Tex;
 	output.View = input.View;
 
